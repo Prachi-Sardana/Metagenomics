@@ -1,0 +1,223 @@
+---
+title: "lungData"
+author: "Prachi Sardana"
+date: "2023-04-01"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Install metagenome sequence package through BiocManager
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("metagenomeSeq")
+```
+Loaded the library metagenome Sequence and the lungData 
+
+```{r}
+library(metagenomeSeq)
+data(lungData)
+
+```
+
+Installed biomformat from Biocmanager
+Loaded the library biomformat which is a tool for reading and writing Biological observation matrix format files used to represent OTU(Operational Taxonomic units) tables in microbiome research.
+file path is specified in BIOM format file "min_sparse_otu_table.biom" that is included as file in biomformat package.
+reads the file and assign it object b
+biom2MRexperiment converts the OTU table stored in the BIOM object "b" into an 
+object of class "MRexperiment".
+
+```{r}
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("biomformat")
+
+
+library(biomformat)
+biom_file <- system.file("extdata","min_sparse_otu_table.biom", package = "biomformat")
+b <- read_biom(biom_file)
+biom2MRexperiment(b)
+```
+
+
+Loading the count data 
+OTU matrix is stored in a tab delimited file provided in metagenomeSeq's library extdata folder  
+loadMeta loads the taxa and counts data from csv in data directory and store it in variable lung
+dim () function retrieves the dimensions of the count data stored in lung object i.e the number of rows and coloumns in count matrix
+
+```{r }
+dataDirectory <- system.file("extdata", package = "metagenomeSeq")
+lung = loadMeta(file.path(dataDirectory,"CHK_NAME.otus.count.csv"))
+dim(lung$counts)
+
+```
+Loading Taxonomy 
+To load annotated taxonomy,the taxa annotations and OTU needs to be in the same order as matrix rows
+The phenotype data is loaded 
+
+```{r }
+
+taxa = read.delim(file.path(dataDirectory, "CHK_otus.taxonomy.csv"),
+stringsAsFactors = FALSE)
+
+```
+
+Phenotype data is loaded into R with loadPhenoData which loads
+the data as a list.
+
+
+```{r }
+clin = loadPhenoData(file.path(dataDirectory,"CHK_clinical.csv"),tran = TRUE)
+ord = match(colnames(lung$counts),rownames(clin))
+clin = clin[ord, ]
+head(clin[1:2, ])
+
+
+```
+
+newMRexperiments uses count matrix, phenodata(annotated data frame ) and featureData( annotated data frame) as input. Biobase provides functions to create annotated data frames.
+
+feature annotated data frame. It is simply the OTU numbers that can
+easily annotate taxonomy at multiple levels.
+
+Data needs to be in MRexperiment object format in order to normalize, run statistical tests and visualize.
+
+loaded the data set lung data 
+
+```{r }
+phenotypeData = AnnotatedDataFrame(clin)
+phenotypeData
+
+OTUdata = AnnotatedDataFrame(taxa)
+OTUdata
+
+obj = newMRexperiment(lung$counts,phenoData=phenotypeData,featureData=OTUdata)
+obj
+
+
+data("lungData")
+lungData
+
+
+```
+
+In order to access phenotype information, phenoData and pData method can be used
+
+
+```{r }
+phenoData(obj)
+
+head(pData(obj), 3)
+
+```
+
+In order to access the feature information, featureData and fData method can be used
+
+```{r }
+  
+featureData(obj)
+head(fData(obj)[, -c(2, 10)], 3)
+
+```
+
+
+MR counts function is used to access the raw or normalized count matrix
+
+```{r }
+head(MRcounts(obj[, 1:2]))
+
+```
+
+
+A MRexperiment-class object is easily subsetted
+
+```{r }
+featuresToKeep = which(rowSums(obj) >= 100)
+samplesToKeep = which(pData(obj)$SmokingStatus == "Smoker")
+obj_smokers = obj[featuresToKeep, samplesToKeep]
+obj_smokers
+
+head(pData(obj_smokers), 3)
+```
+
+normalization scaling factors can be accessed or replaced with the normFactors
+method
+Library sizes (sequencing depths) can be accessed or replaced with the libSize method
+
+```{r }
+
+head(normFactors(obj))
+normFactors(obj) <- rnorm(ncol(obj))
+head(normFactors(obj))
+
+head(libSize(obj))
+libSize(obj) <- rnorm(ncol(obj))
+head(libSize(obj))
+
+
+```
+
+In order to maintain a threshhold of minimum depth or OTU presence, data can be filtered.
+
+```{r }
+
+data("lungData")
+filterData(lungData, present = 10, depth = 1000)
+
+
+```
+
+
+Normalization method cumNorm is used to calculate the scaling factors which is equal to sum of counts upto a particular quantile.
+After defining the MRexperiment object, the proper percentile is calculated to normalize the counts.
+Different percentiles are calculated for the normalization scheme by specifying p.
+
+```{r }
+
+data("lungData")
+p = cumNormStatFast(lungData)
+lungData = cumNorm(lungData, p = p)
+
+```
+
+Calculating normalization factors using Wrench. Wrench takes in argument condition rather than specifying p
+
+```{r }
+condition = lungData$SampleType
+lungsData = wrenchNorm(lungData, condition = condition)
+
+
+```
+Exporting data to export normalized count matrix.
+
+```{r }
+
+mat = MRcounts(lungData, norm = TRUE, log = TRUE)[1:5, 1:5]
+exportMat(mat, file = file.path(dataDirectory, "tmp.tsv"))
+exportStats(lungData[, 1:5], file = file.path(dataDirectory,
+"tmp.tsv"))
+
+head(read.csv(file = file.path(dataDirectory, "tmp.tsv"), sep = "\t"))
+```
+
+Statistical testing
+using fitfeature model for differential abundance testing 
+
+```{r }
+
+data("lungData")
+lungData = lungData[, -which(is.na(pData(lungData)$SmokingStatus))]
+lungData = filterData(lungData, present = 30, depth = 1)
+lungData <- cumNorm(lungData, p = 0.5)
+pd <- pData(lungData)
+mod <- model.matrix(~1 + SmokingStatus, data = pd)
+lungres1 = fitFeatureModel(lungData, mod)
+head(MRcoefs(lungres1))
+
+```
