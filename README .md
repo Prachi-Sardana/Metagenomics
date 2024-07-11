@@ -1,13 +1,10 @@
 # Project Title
-### Assignment 9 -BINF6309 -Bioinformatics
-NUID - 002938389
+
+### Description - To perform Metagenomic sequence and create a R markdown file lungData.rmd referring metagenomeseq.pdf tutorial.
 
 ### Authors
 -Prachi Sardana 
-
 -sardana.p@northeastern.edu
-
-### Description - To perform Metagenomic sequence and create a R markdown file lungData.rmd referring metagenomeseq.pdf tutorial.
 
 ### Getting Started
 
